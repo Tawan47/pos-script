@@ -16,7 +16,7 @@ from pywinauto import mouse
 # ============================================================
 # CONFIG
 # ============================================================
-REPEAT_COUNT  = 10          # จำนวนรอบที่จะกดไปกลับ
+REPEAT_COUNT  = None        # None = วนไปเรื่อยๆ จนกว่าจะกด Ctrl+C หรือปิด terminal
 STEP_DELAY    = 1.0         # วินาที รอระหว่าง step
 POSTAL_CODE   = "10210"     # รหัสไปรษณีย์ที่ใช้ทดสอบ
 PAGE_TIMEOUT  = 15          # วินาที รอสูงสุดให้หน้าโหลด
@@ -196,13 +196,20 @@ def wait_for_page(window, check_fn, label, timeout=PAGE_TIMEOUT, poll=PAGE_POLL)
 
 def run_back_forth_test(main_window, repeat=REPEAT_COUNT):
     """
-    กดไปกลับหน้าระบุปลายทาง <-> เลือกบริการ จำนวน repeat รอบ
+    กดไปกลับหน้าระบุปลายทาง <-> เลือกบริการ
+    repeat=None = วนไปเรื่อยๆ จนกว่าจะกด Ctrl+C
     """
-    log(f"=== START: test_back_forth_postal | {repeat} รอบ ===")
+    label = f"{repeat} รอบ" if repeat is not None else "ไม่จำกัดรอบ (กด Ctrl+C เพื่อหยุด)"
+    log(f"=== START: test_back_forth_postal | {label} ===")
     results = []
+    i = 0
 
-    for i in range(1, repeat + 1):
-        log(f"\n--- รอบที่ {i}/{repeat} ---")
+    while True:
+        i += 1
+        if repeat is not None and i > repeat:
+            break
+        round_label = f"{i}/{repeat}" if repeat is not None else f"{i}"
+        log(f"\n--- รอบที่ {round_label} ---")
 
         # ---- ตรวจว่าอยู่ที่หน้าระบุปลายทาง ----
         if not is_on_postal_page(main_window):
@@ -223,7 +230,7 @@ def run_back_forth_test(main_window, repeat=REPEAT_COUNT):
             results.append({"round": i, "status": "FAIL", "step": "click_next"})
             continue
 
-        # รอจนหน้าเลือกบริการโหลดเสร็จ (หมุนนานแค่ไหนก็รอ)
+        # รอจนหน้าเลือกบริการโหลดเสร็จ
         if not wait_for_page(main_window, is_on_service_page, "เลือกบริการ"):
             results.append({"round": i, "status": "FAIL", "step": "wait_service_page"})
             continue
@@ -245,17 +252,16 @@ def run_back_forth_test(main_window, repeat=REPEAT_COUNT):
             results.append({"round": i, "status": "FAIL", "step": "not_back_on_postal"})
 
     # ---- SUMMARY ----
-    log("\n========== SUMMARY ==========")
     passed  = sum(1 for r in results if r["status"] == "PASS")
     failed  = sum(1 for r in results if r["status"] == "FAIL")
     skipped = sum(1 for r in results if r["status"] == "SKIP")
-    log(f"PASS: {passed} | FAIL: {failed} | SKIP: {skipped} | TOTAL: {repeat}")
+    log("\n========== SUMMARY ==========")
+    log(f"PASS: {passed} | FAIL: {failed} | SKIP: {skipped} | TOTAL: {i}")
     for r in results:
         mark   = "[/]" if r["status"] == "PASS" else "[x]" if r["status"] == "FAIL" else "[-]"
         detail = f" -> {r.get('step', r.get('reason', ''))}" if r["status"] != "PASS" else ""
         log(f"  {mark} รอบ {r['round']}: {r['status']}{detail}")
     log("==============================")
-
     return passed, failed, skipped
 
 
