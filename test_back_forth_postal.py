@@ -32,6 +32,32 @@ def log(msg):
     print(f"[{ts}] {msg}")
 
 
+def clear_and_fill(edit, postal_code):
+    """ล้าง field แล้วกรอกค่าใหม่ พร้อมตรวจสอบว่ากรอกถูกต้อง"""
+    for attempt in range(3):
+        try:
+            edit.click_input()
+            time.sleep(0.2)
+            # ล้างด้วยหลายวิธีเพื่อให้แน่ใจว่า field ว่าง
+            edit.type_keys("^a", pause=0.1)
+            edit.type_keys("{DELETE}", pause=0.1)
+            edit.type_keys("^a", pause=0.1)
+            edit.type_keys("{BACKSPACE}", pause=0.1)
+            time.sleep(0.2)
+            # กรอกค่าใหม่ทีละตัว
+            edit.type_keys(str(postal_code), with_spaces=True, pause=0.05)
+            time.sleep(0.3)
+            # ตรวจว่ากรอกถูกต้อง
+            current = edit.window_text().strip()
+            if current == str(postal_code):
+                return True
+            log(f"   [WARN] attempt {attempt+1}: got '{current}' expected '{postal_code}' -> retry")
+            time.sleep(0.3)
+        except Exception as e:
+            log(f"   [WARN] clear_and_fill attempt {attempt+1}: {e}")
+    return False
+
+
 def fill_postal_code(window, postal_code):
     """กรอกรหัสไปรษณีย์ในหน้าระบุปลายทาง"""
     try:
@@ -42,19 +68,19 @@ def fill_postal_code(window, postal_code):
             aid  = edit.element_info.automation_id or ""
             name = edit.element_info.name or ""
             if "PostalCode" in aid or "รหัสไปรษณีย์" in name or "Postal" in name:
-                edit.click_input()
-                edit.type_keys("^a", pause=0.1)
-                edit.type_keys(str(postal_code), with_spaces=True)
-                log(f"   [/] กรอกรหัสไปรษณีย์: {postal_code}")
-                return True
+                if clear_and_fill(edit, postal_code):
+                    log(f"   [/] กรอกรหัสไปรษณีย์: {postal_code}")
+                    return True
+                log(f"   [!] กรอกรหัสไปรษณีย์ไม่สำเร็จหลัง 3 ครั้ง")
+                return False
 
         # วิธี 2: ใช้ edit box แรกที่มองเห็น (fallback)
         if edits:
-            edits[0].click_input()
-            edits[0].type_keys("^a", pause=0.1)
-            edits[0].type_keys(str(postal_code), with_spaces=True)
-            log(f"   [/] กรอกรหัสไปรษณีย์: {postal_code} (fallback)")
-            return True
+            if clear_and_fill(edits[0], postal_code):
+                log(f"   [/] กรอกรหัสไปรษณีย์: {postal_code} (fallback)")
+                return True
+            log(f"   [!] กรอกรหัสไปรษณีย์ไม่สำเร็จหลัง 3 ครั้ง (fallback)")
+            return False
 
     except Exception as e:
         log(f"   [WARN] fill_postal_code error: {e}")
