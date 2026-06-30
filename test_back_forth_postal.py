@@ -16,9 +16,11 @@ from pywinauto import mouse
 # ============================================================
 # CONFIG
 # ============================================================
-REPEAT_COUNT = 10          # จำนวนรอบที่จะกดไปกลับ
-STEP_DELAY   = 1.0         # วินาที รอระหว่าง step
-POSTAL_CODE  = "10210"     # รหัสไปรษณีย์ที่ใช้ทดสอบ
+REPEAT_COUNT  = 10          # จำนวนรอบที่จะกดไปกลับ
+STEP_DELAY    = 1.0         # วินาที รอระหว่าง step
+POSTAL_CODE   = "10210"     # รหัสไปรษณีย์ที่ใช้ทดสอบ
+PAGE_TIMEOUT  = 15          # วินาที รอสูงสุดให้หน้าโหลด
+PAGE_POLL     = 0.5         # วินาที ความถี่ในการ poll
 
 
 # ============================================================
@@ -150,6 +152,18 @@ def is_on_service_page(window):
     return False
 
 
+def wait_for_page(window, check_fn, label, timeout=PAGE_TIMEOUT, poll=PAGE_POLL):
+    """รอจนกว่า check_fn จะ return True หรือ timeout"""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if check_fn(window):
+            log(f"   [/] หน้า '{label}' โหลดเสร็จแล้ว")
+            return True
+        time.sleep(poll)
+    log(f"   [!] Timeout รอหน้า '{label}' ({timeout}s)")
+    return False
+
+
 # ============================================================
 # MAIN TEST
 # ============================================================
@@ -183,12 +197,12 @@ def run_back_forth_test(main_window, repeat=REPEAT_COUNT):
             results.append({"round": i, "status": "FAIL", "step": "click_next"})
             continue
 
-        time.sleep(STEP_DELAY * 1.5)
+        # รอจนหน้าเลือกบริการโหลดเสร็จ (หมุนนานแค่ไหนก็รอ)
+        if not wait_for_page(main_window, is_on_service_page, "เลือกบริการ"):
+            results.append({"round": i, "status": "FAIL", "step": "wait_service_page"})
+            continue
 
-        if is_on_service_page(main_window):
-            log("   [/] ถึงหน้าเลือกบริการแล้ว")
-        else:
-            log("   [WARN] อาจไม่ถึงหน้าเลือกบริการ (ตรวจสอบหน้าจอ)")
+        time.sleep(STEP_DELAY)
 
         # ---- BACKWARD: กด กลับ ----
         ok_back = click_back(main_window)
@@ -196,10 +210,8 @@ def run_back_forth_test(main_window, repeat=REPEAT_COUNT):
             results.append({"round": i, "status": "FAIL", "step": "click_back"})
             continue
 
-        time.sleep(STEP_DELAY * 1.5)
-
-        # ---- ตรวจว่ากลับมาหน้าระบุปลายทาง ----
-        if is_on_postal_page(main_window):
+        # รอจนกลับมาหน้าระบุปลายทาง
+        if wait_for_page(main_window, is_on_postal_page, "ระบุปลายทาง"):
             log(f"   [/] รอบ {i}: กลับมาหน้าระบุปลายทาง OK")
             results.append({"round": i, "status": "PASS"})
         else:
