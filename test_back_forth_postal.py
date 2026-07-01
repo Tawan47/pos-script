@@ -89,8 +89,8 @@ def fill_postal_code(window, postal_code):
     return False
 
 
-def click_next(window):
-    """กดปุ่มถัดไป"""
+def find_next_button(window):
+    """หาปุ่มถัดไป คืนค่า element หรือ None (ไม่สนใจตำแหน่งบนจอ/ขนาดหน้าจอ)"""
     try:
         candidates = []
         for child in window.descendants():
@@ -106,11 +106,46 @@ def click_next(window):
         if candidates:
             # เลือกปุ่มที่อยู่ล่างสุด-ขวาสุด
             candidates.sort(key=lambda x: (x.rectangle().top, x.rectangle().left))
-            candidates[-1].click_input()
-            log("   [/] กดปุ่ม 'ถัดไป'")
-            return True
+            return candidates[-1]
     except Exception as e:
-        log(f"   [WARN] click_next error: {e}")
+        log(f"   [WARN] find_next_button error: {e}")
+    return None
+
+
+def click_next(window, enable_timeout=5, enable_poll=0.3):
+    """
+    กดปุ่มถัดไป โดยไม่ขึ้นกับตำแหน่ง/ขนาดหน้าจอ:
+    - รอจนปุ่ม enabled (เผื่อแอปยังไม่อัปเดต state จากการกรอกเลข)
+    - ใช้ invoke() ของ UIA เป็นหลัก (ทำงานได้แม้ปุ่มจะอยู่นอกพื้นที่มองเห็นบนจอเล็ก)
+    - ถ้า invoke ไม่ได้ ค่อย fallback ไปที่ click_input()
+    """
+    button = find_next_button(window)
+
+    if button is not None:
+        # รอให้ปุ่ม enabled ก่อนกด เผื่อ validation ของแอปยังไม่ทัน
+        deadline = time.time() + enable_timeout
+        while time.time() < deadline:
+            try:
+                if button.is_enabled():
+                    break
+            except Exception:
+                break
+            time.sleep(enable_poll)
+        else:
+            log("   [WARN] ปุ่ม 'ถัดไป' ยัง disabled อยู่หลังรอ -> จะลองกดต่อไป")
+
+        try:
+            button.invoke()
+            log("   [/] กดปุ่ม 'ถัดไป' (invoke)")
+            return True
+        except Exception as e:
+            log(f"   [WARN] invoke ไม่สำเร็จ: {e} -> ลอง click_input")
+            try:
+                button.click_input()
+                log("   [/] กดปุ่ม 'ถัดไป' (click_input)")
+                return True
+            except Exception as e2:
+                log(f"   [WARN] click_input ก็ไม่สำเร็จ: {e2}")
 
     # Fallback: กด Enter
     try:
