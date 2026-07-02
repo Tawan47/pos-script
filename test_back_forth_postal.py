@@ -33,6 +33,39 @@ def log(msg):
     print(f"[{ts}] {msg}")
 
 
+def _scan_descendants(window, kwargs, result, error):
+    """รัน descendants() ใน thread แยก เพื่อให้ตรวจจับอาการค้างได้ (UIA call นี้ไม่มี timeout ในตัว)"""
+    try:
+        result.append(window.descendants(**kwargs))
+    except Exception as e:
+        error.append(e)
+
+
+def safe_descendants(window, label, scan_timeout=10, **kwargs):
+    """
+    เรียก window.descendants() พร้อม timeout + log กันเงียบค้าง
+    (UIA call นี้ปกติไม่มี timeout ในตัว ถ้าแอปเป้าหมาย busy/ไม่ตอบสนอง จะค้างตลอดไป)
+    คืนค่า list ของ elements หรือ [] ถ้า timeout/error
+    """
+    result, error = [], []
+    scan_thread = threading.Thread(
+        target=_scan_descendants, args=(window, kwargs, result, error), daemon=True
+    )
+    scan_thread.start()
+    scan_thread.join(scan_timeout)
+
+    if scan_thread.is_alive():
+        log(f"   [!] {label}: window.descendants() ค้างเกิน {scan_timeout}s "
+            f"-> แอป Riposte อาจกำลัง busy/ไม่ตอบสนอง (UI thread ไม่ตอบ UIA call)")
+        return []
+
+    if error:
+        log(f"   [WARN] {label}: descendants() error: {error[0]}")
+        return []
+
+    return result[0]
+
+
 def clear_and_fill(edit, postal_code):
     """ล้าง field แล้วกรอกค่าใหม่ พร้อมตรวจสอบว่ากรอกถูกต้อง"""
     for attempt in range(3):
@@ -62,7 +95,7 @@ def clear_and_fill(edit, postal_code):
 def fill_postal_code(window, postal_code):
     """กรอกรหัสไปรษณีย์ในหน้าระบุปลายทาง"""
     try:
-        edits = [e for e in window.descendants(control_type="Edit") if e.is_visible()]
+        edits = [e for e in safe_descendants(window, "fill_postal_code", control_type="Edit") if e.is_visible()]
 
         # วิธี 1: หา edit ที่ automation_id หรือ name มีคำว่า PostalCode
         for edit in edits:
@@ -90,40 +123,21 @@ def fill_postal_code(window, postal_code):
     return False
 
 
-def _scan_descendants(window, result, error):
-    """รัน descendants() ใน thread แยก เพื่อให้ตรวจจับอาการค้างได้ (UIA call นี้ไม่มี timeout ในตัว)"""
-    try:
-        result.append(window.descendants())
-    except Exception as e:
-        error.append(e)
-
-
 def find_next_button(window, scan_timeout=10):
     """หาปุ่มถัดไป คืนค่า element หรือ None (ไม่สนใจตำแหน่งบนจอ/ขนาดหน้าจอ)"""
     try:
         log("   [i] find_next_button: เริ่ม scan UI tree (window.descendants())...")
         t0 = time.time()
 
-        result, error = [], []
-        scan_thread = threading.Thread(
-            target=_scan_descendants, args=(window, result, error), daemon=True
-        )
-        scan_thread.start()
-        scan_thread.join(scan_timeout)
-
-        if scan_thread.is_alive():
-            log(f"   [!] find_next_button: window.descendants() ค้างเกิน {scan_timeout}s "
-                f"-> แอป Riposte อาจกำลัง busy/ไม่ตอบสนอง (UI thread ไม่ตอบ UIA call)")
+        children = safe_descendants(window, "find_next_button", scan_timeout=scan_timeout)
+        if not children:
             return None
 
-        if error:
-            raise error[0]
-
         elapsed = time.time() - t0
-        log(f"   [i] find_next_button: scan เสร็จใน {elapsed:.2f}s พบ {len(result[0])} elements")
+        log(f"   [i] find_next_button: scan เสร็จใน {elapsed:.2f}s พบ {len(children)} elements")
 
         candidates = []
-        for child in result[0]:
+        for child in children:
             if not child.is_visible():
                 continue
             txt = child.window_text().strip()
@@ -196,7 +210,7 @@ def click_next(window, enable_timeout=5, enable_poll=0.3):
 def click_back(window):
     """กดปุ่มกลับ"""
     try:
-        for child in window.descendants():
+        for child in safe_descendants(window, "click_back"):
             if not child.is_visible():
                 continue
             txt = child.window_text().strip()
@@ -222,7 +236,7 @@ def click_back(window):
 def is_on_postal_page(window):
     """ตรวจสอบว่าอยู่ที่หน้า 'ระบุปลายทาง' หรือไม่"""
     try:
-        for child in window.descendants():
+        for child in safe_descendants(window, "is_on_postal_page"):
             if not child.is_visible():
                 continue
             txt = child.window_text()
@@ -236,7 +250,7 @@ def is_on_postal_page(window):
 def is_on_service_page(window):
     """ตรวจสอบว่าอยู่ที่หน้า 'เลือกบริการ' หรือไม่"""
     try:
-        for child in window.descendants():
+        for child in safe_descendants(window, "is_on_service_page"):
             if not child.is_visible():
                 continue
             txt = child.window_text()
