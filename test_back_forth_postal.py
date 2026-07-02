@@ -234,13 +234,18 @@ def click_back(window):
 
 
 def is_on_postal_page(window):
-    """ตรวจสอบว่าอยู่ที่หน้า 'ระบุปลายทาง' หรือไม่"""
+    """
+    ตรวจสอบว่าอยู่ที่หน้า 'ระบุปลายทาง' หรือไม่
+    หมายเหตุ: เช็คเฉพาะ header "ระบุปลายทาง" เท่านั้น (ไม่เช็คคำว่า "รหัสไปรษณีย์"
+    เพราะ label สรุปพัสดุ "รหัสไปรษณีย์: xxxxx" จะค้างแสดงอยู่ในหน้าถัดๆ ไปด้วย
+    เช่นหน้า "เลือกบริการ" ทำให้ตรวจจับหน้าผิดและ fill_postal_code หา edit box ไม่เจอวนไม่จบ)
+    """
     try:
         for child in safe_descendants(window, "is_on_postal_page"):
             if not child.is_visible():
                 continue
-            txt = child.window_text()
-            if "ระบุปลายทาง" in txt or "รหัสไปรษณีย์" in txt:
+            txt = child.window_text().strip()
+            if txt == "ระบุปลายทาง":
                 return True
     except:
         pass
