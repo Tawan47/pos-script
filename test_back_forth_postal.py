@@ -236,17 +236,29 @@ def click_back(window):
 def is_on_postal_page(window):
     """
     ตรวจสอบว่าอยู่ที่หน้า 'ระบุปลายทาง' หรือไม่
-    หมายเหตุ: เช็คเฉพาะ header "ระบุปลายทาง" เท่านั้น (ไม่เช็คคำว่า "รหัสไปรษณีย์"
-    เพราะ label สรุปพัสดุ "รหัสไปรษณีย์: xxxxx" จะค้างแสดงอยู่ในหน้าถัดๆ ไปด้วย
-    เช่นหน้า "เลือกบริการ" ทำให้ตรวจจับหน้าผิดและ fill_postal_code หา edit box ไม่เจอวนไม่จบ)
+    หมายเหตุ: เช็คว่ามี edit box สำหรับกรอกรหัสไปรษณีย์อยู่จริงบนหน้าจอ (ไม่ใช่แค่หา
+    คำว่า "รหัสไปรษณีย์" ที่ไหนก็ได้ เพราะ label สรุปพัสดุ "รหัสไปรษณีย์: xxxxx" จะค้าง
+    แสดงอยู่ในหน้าถัดๆ ไปด้วย เช่นหน้า "เลือกบริการ" ทำให้ตรวจจับหน้าผิด)
     """
     try:
+        found_header = False
+        found_service_header = False
+        has_postal_edit = False
         for child in safe_descendants(window, "is_on_postal_page"):
             if not child.is_visible():
                 continue
             txt = child.window_text().strip()
-            if txt == "ระบุปลายทาง":
-                return True
+            if "ระบุปลายทาง" in txt:
+                found_header = True
+            if "เลือกบริการ" in txt:
+                found_service_header = True
+            if child.element_info.control_type == "Edit":
+                aid = child.element_info.automation_id or ""
+                name = child.element_info.name or ""
+                if "PostalCode" in aid or "รหัสไปรษณีย์" in name or "Postal" in name:
+                    has_postal_edit = True
+
+        return found_header and has_postal_edit and not found_service_header
     except:
         pass
     return False
