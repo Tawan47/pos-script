@@ -9,6 +9,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '
 
 import time
 import datetime
+import threading
 from pywinauto.application import Application
 from pywinauto import mouse
 
@@ -89,11 +90,40 @@ def fill_postal_code(window, postal_code):
     return False
 
 
-def find_next_button(window):
+def _scan_descendants(window, result, error):
+    """รัน descendants() ใน thread แยก เพื่อให้ตรวจจับอาการค้างได้ (UIA call นี้ไม่มี timeout ในตัว)"""
+    try:
+        result.append(window.descendants())
+    except Exception as e:
+        error.append(e)
+
+
+def find_next_button(window, scan_timeout=10):
     """หาปุ่มถัดไป คืนค่า element หรือ None (ไม่สนใจตำแหน่งบนจอ/ขนาดหน้าจอ)"""
     try:
+        log("   [i] find_next_button: เริ่ม scan UI tree (window.descendants())...")
+        t0 = time.time()
+
+        result, error = [], []
+        scan_thread = threading.Thread(
+            target=_scan_descendants, args=(window, result, error), daemon=True
+        )
+        scan_thread.start()
+        scan_thread.join(scan_timeout)
+
+        if scan_thread.is_alive():
+            log(f"   [!] find_next_button: window.descendants() ค้างเกิน {scan_timeout}s "
+                f"-> แอป Riposte อาจกำลัง busy/ไม่ตอบสนอง (UI thread ไม่ตอบ UIA call)")
+            return None
+
+        if error:
+            raise error[0]
+
+        elapsed = time.time() - t0
+        log(f"   [i] find_next_button: scan เสร็จใน {elapsed:.2f}s พบ {len(result[0])} elements")
+
         candidates = []
-        for child in window.descendants():
+        for child in result[0]:
             if not child.is_visible():
                 continue
             txt = child.window_text().strip()
@@ -106,7 +136,11 @@ def find_next_button(window):
         if candidates:
             # เลือกปุ่มที่อยู่ล่างสุด-ขวาสุด
             candidates.sort(key=lambda x: (x.rectangle().top, x.rectangle().left))
+            log(f"   [i] find_next_button: พบปุ่ม 'ถัดไป' ({len(candidates)} candidate) "
+                f"enabled={candidates[-1].is_enabled()}")
             return candidates[-1]
+        else:
+            log("   [!] find_next_button: ไม่พบปุ่ม 'ถัดไป' ใน UI tree (อาจยังไม่ขึ้น/ชื่อไม่ตรง)")
     except Exception as e:
         log(f"   [WARN] find_next_button error: {e}")
     return None
